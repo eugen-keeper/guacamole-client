@@ -22,6 +22,7 @@ package org.apache.guacamole.tunnel;
 import com.google.common.io.BaseEncoding;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.guacamole.GuacamoleException;
@@ -39,6 +40,10 @@ import org.slf4j.LoggerFactory;
  */
 public class InputStreamInterceptingFilter
         extends StreamInterceptingFilter<InputStream> {
+
+    private long uploadedSize = 0;
+    private long lastFragmentSize = 0;
+    private long lastFragmentTime = 0;
 
     /**
      * Logger for this class.
@@ -77,6 +82,30 @@ public class InputStreamInterceptingFilter
         sendInstruction(new GuacamoleInstruction("blob", index,
            BaseEncoding.base64().encode(blob)));
 
+        uploadedSize += blob.length;
+        if (uploadedSize == blob.length) {
+            lastFragmentTime = System.currentTimeMillis() / 1000L;
+            Instant instant = Instant.ofEpochSecond(lastFragmentTime);
+            String infoMsg = ">>> Started uploading at: " + instant;
+            logger.info(infoMsg);
+        } else {
+            if (lastFragmentSize + 1000000000 < uploadedSize) {
+                long diff = uploadedSize - lastFragmentSize;
+                long now = System.currentTimeMillis() / 1000L;
+                Instant started = Instant.ofEpochSecond(lastFragmentTime);
+                Instant finished = Instant.ofEpochSecond(now);
+   
+                String infoMsg = ">>> Uploaded: " + diff +
+                    " (b); started: " + started +
+                    "; finished: " + finished +
+                    "; spent: " + (now - lastFragmentTime) +
+                    " (s); overall uploaded: " + uploadedSize;
+                logger.info(infoMsg);
+   
+                lastFragmentTime = now;
+                lastFragmentSize = uploadedSize;
+            }
+        }
     }
 
     /**
@@ -89,6 +118,23 @@ public class InputStreamInterceptingFilter
      */
     private void sendEnd(String index) {
         sendInstruction(new GuacamoleInstruction("end", index));
+
+        // It will not be called anyway....
+        if (lastFragmentSize != uploadedSize) {
+            long diff = uploadedSize - lastFragmentSize;
+            long now = System.currentTimeMillis() / 1000L;
+            Instant started = Instant.ofEpochSecond(lastFragmentTime);
+            Instant finished = Instant.ofEpochSecond(now);
+
+            String infoMsg = ">>> Uploaded: " + diff +
+                " (b); started: " + started +
+                "; finished: " + finished +
+                "; spent: " + (now - lastFragmentTime) +
+                " (s); overall uploaded: " + uploadedSize;
+            logger.info(infoMsg);
+        }
+
+        logger.info(">>> sent the END instruction");
     }
 
     /**
@@ -112,9 +158,8 @@ public class InputStreamInterceptingFilter
             // End stream if no more data
             if (length == -1) {
 
-                // Close stream, send end if the stream is still valid
-                if (closeInterceptedStream(stream))
-                    sendEnd(stream.getIndex());
+                // Close stream
+                closeInterceptedStream(stream);
 
                 return;
 
