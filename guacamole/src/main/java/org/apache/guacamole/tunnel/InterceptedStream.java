@@ -47,6 +47,11 @@ public class InterceptedStream<T extends Closeable> {
     private final T stream;
 
     /**
+     * Whether is the stream is a file download.
+     */
+    private final boolean isFileDownload;
+
+    /**
      * The exception which prevented the stream from completing successfully,
      * if any. If the stream completed successfully, or has not encountered any
      * exception yet, this will be null.
@@ -64,9 +69,10 @@ public class InterceptedStream<T extends Closeable> {
      *     The stream which will produce or consume the data sent over the
      *     intercepted Guacamole stream.
      */
-    public InterceptedStream(String index, T stream) {
+    public InterceptedStream(String index, T stream, boolean isFileDownload) {
         this.index = index;
         this.stream = stream;
+        this.isFileDownload = isFileDownload;
     }
 
     /**
@@ -89,6 +95,10 @@ public class InterceptedStream<T extends Closeable> {
      */
     public T getStream() {
         return stream;
+    }
+
+    public boolean isFileDownload() {
+        return isFileDownload;
     }
 
     /**

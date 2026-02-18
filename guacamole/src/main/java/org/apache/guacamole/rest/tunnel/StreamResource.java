@@ -88,13 +88,16 @@ public class StreamResource {
     @GET
     public Response getStreamContents() {
 
+        // Check if a file download stream
+        boolean isFileDownload = mediaType.equals(MediaType.APPLICATION_OCTET_STREAM);
+
         // Intercept all output
         StreamingOutput stream = new StreamingOutput() {
 
             @Override
             public void write(OutputStream output) throws IOException {
                 try {
-                    tunnel.interceptStream(streamIndex, output);
+                    tunnel.interceptStream(streamIndex, output, isFileDownload);
                 }
                 catch (GuacamoleException e) {
                     throw new IOException(e);
@@ -107,7 +110,7 @@ public class StreamResource {
         ResponseBuilder responseBuilder = Response.ok(stream, mediaType);
 
         // Set Content-Disposition header for "application/octet-stream"
-        if (mediaType.equals(MediaType.APPLICATION_OCTET_STREAM))
+        if (isFileDownload)
             responseBuilder.header("Content-Disposition", "attachment");
 
         return responseBuilder.build();

@@ -84,11 +84,14 @@ public class StreamInterceptingTunnel extends DelegatingGuacamoleTunnel {
      * @param stream
      *     The OutputStream to write all intercepted data to.
      *
+     * @param isFileDownload
+     *     Whether it is a file download stream.
+     * 
      * @throws GuacamoleException
      *     If an error occurs while intercepting the stream, or if the stream
      *     itself reports an error.
      */
-    public void interceptStream(int index, OutputStream stream)
+    public void interceptStream(int index, OutputStream stream, boolean isFileDownload)
             throws GuacamoleException {
 
         // Log beginning of intercepted stream
@@ -96,7 +99,8 @@ public class StreamInterceptingTunnel extends DelegatingGuacamoleTunnel {
                 index, getUUID());
 
         try {
-            outputStreamFilter.interceptStream(index, new BufferedOutputStream(stream));
+            outputStreamFilter.interceptStream(index,
+                    new BufferedOutputStream(stream), isFileDownload);
         }
 
         // Log end of intercepted stream
@@ -133,7 +137,7 @@ public class StreamInterceptingTunnel extends DelegatingGuacamoleTunnel {
                 index, getUUID());
 
         try {
-            inputStreamFilter.interceptStream(index, new BufferedInputStream(stream));
+            inputStreamFilter.interceptStream(index, new BufferedInputStream(stream), false);
         }
 
         // Log end of intercepted stream

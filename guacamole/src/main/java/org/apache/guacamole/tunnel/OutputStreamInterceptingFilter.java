@@ -23,6 +23,9 @@ import com.google.common.io.BaseEncoding;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.apache.guacamole.GuacamoleException;
 import org.apache.guacamole.net.GuacamoleTunnel;
 import org.apache.guacamole.protocol.GuacamoleInstruction;
@@ -37,13 +40,20 @@ import org.slf4j.LoggerFactory;
  * sent automatically.
  */
 public class OutputStreamInterceptingFilter
-        extends StreamInterceptingFilter<OutputStream> {
+        extends StreamInterceptingFilter<OutputStream>
+        implements OutputStreamWriter.ExecutionListener {
 
     /**
      * Logger for this class.
      */
     private static final Logger logger =
             LoggerFactory.getLogger(OutputStreamInterceptingFilter.class);
+
+    /**
+     * File download stream writers which will send data asynchronosly.
+     */
+    private final ConcurrentMap<String, OutputStreamWriter> streamWriters =
+            new ConcurrentHashMap<>();
 
     /**
      * Whether this OutputStreamInterceptingFilter should respond to received
@@ -64,6 +74,7 @@ public class OutputStreamInterceptingFilter
      */
     public OutputStreamInterceptingFilter(GuacamoleTunnel tunnel) {
         super(tunnel);
+        logger.warn(">>> OutputStreamInterceptingFilter()");
     }
 
     /**
@@ -93,6 +104,16 @@ public class OutputStreamInterceptingFilter
         sendInstruction(new GuacamoleInstruction("ack", index, message,
                 Integer.toString(status.getGuacamoleStatusCode())));
 
+    }
+
+    @Override
+    public void onBlobWritten(String index) {
+        sendAck(index, "OK", GuacamoleStatus.SUCCESS);
+    }
+
+    @Override
+    public void onWriteFailed(String index) {
+        sendAck(index, "FAIL", GuacamoleStatus.SERVER_ERROR);
     }
 
     /**
@@ -131,6 +152,13 @@ public class OutputStreamInterceptingFilter
         }
         catch (IllegalArgumentException e) {
             logger.warn("Received base64 data for intercepted stream was invalid.", e);
+            return null;
+        }
+
+        // Process the blob asynchornously if there is a worker
+        OutputStreamWriter streamWriter = streamWriters.get(index);
+        if (streamWriter != null) {
+            streamWriter.handleBlob(blob);
             return null;
         }
 
@@ -179,6 +207,12 @@ public class OutputStreamInterceptingFilter
         // Terminate stream
         closeInterceptedStream(args.get(0));
 
+        // If we receive the end marker for a file download stream,
+        // it means the last blob has been written
+        OutputStreamWriter streamWriter = streamWriters.remove(args.get(0));
+        if (streamWriter != null) {
+            streamWriter.stop();
+        }
     }
 
     /**
@@ -189,6 +223,7 @@ public class OutputStreamInterceptingFilter
      *     The "sync" instruction being handled.
      */
     private void handleSync(GuacamoleInstruction instruction) {
+        logger.warn(">>> handleSync()");
         acknowledgeBlobs = false;
     }
 
@@ -221,9 +256,27 @@ public class OutputStreamInterceptingFilter
     @Override
     protected void handleInterceptedStream(InterceptedStream<OutputStream> stream) {
 
+        logger.warn(">>> handleInterceptedStream()");
+
         // Acknowledge that the stream is ready to receive data
         sendAck(stream.getIndex(), "OK", GuacamoleStatus.SUCCESS);
 
-    }
+        if (stream.isFileDownload()) {
+            // Create the stream writer
+            OutputStreamWriter streamWriter = new OutputStreamWriter(stream, this);
+            // Put it into the container and check if there was another writer for the index
+            OutputStreamWriter old = streamWriters.put(stream.getIndex(), streamWriter);
+            if (old != null) {
+                // Close the stream to be sure it does not get stuck on write
+                closeInterceptedStream(old.getStream());
+                // Stop it
+                old.stop();
+            }
+            streamWriter.run();
+            // Remove the stream from the container
+            streamWriters.entrySet().removeIf(entry -> entry.getValue().equals(streamWriter));
+        }
 
+        logger.warn(">>> handleInterceptedStream() END");
+    }
 }

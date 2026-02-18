@@ -178,11 +178,16 @@ public abstract class StreamInterceptingFilter<T extends Closeable>
      *     The stream object which will produce or consume all data for the
      *     stream having the given index.
      *
+     * @param isFileDownload
+     *     Whether the stream is for a file download.
+     * 
      * @throws GuacamoleException
      *     If an error occurs while intercepting the stream, or if the stream
      *     itself reports an error.
      */
-    public void interceptStream(int index, T stream) throws GuacamoleException {
+    public void interceptStream(int index, T stream, boolean isFileDownload) throws GuacamoleException {
+
+        logger.warn(">>> interceptStream() index: {}; is file download: {}", index, isFileDownload);
 
         InterceptedStream<T> interceptedStream;
         String indexString = Integer.toString(index);
@@ -195,7 +200,7 @@ public abstract class StreamInterceptingFilter<T extends Closeable>
                 return;
 
             // Wrap stream
-            interceptedStream = new InterceptedStream<T>(indexString, stream);
+            interceptedStream = new InterceptedStream<T>(indexString, stream, isFileDownload);
 
             // Replace any existing stream
             streams.put(interceptedStream);
@@ -211,6 +216,8 @@ public abstract class StreamInterceptingFilter<T extends Closeable>
         // Throw any asynchronously-provided exception
         if (interceptedStream.hasStreamError())
             throw interceptedStream.getStreamError();
+
+        logger.warn(">>> interceptStream() END");
 
     }
 
